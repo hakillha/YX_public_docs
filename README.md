@@ -162,6 +162,8 @@ vehicle_logo_general \
 
 ## Training under mmlab
 
+**For a more detailed documentation please refer to [mmlab's own github page](https://github.com/open-mmlab/mmdetection) (especially their [GETTING_STARTED](https://github.com/open-mmlab/mmdetection/blob/master/docs/GETTING_STARTED.md) setction).**
+
 Create a custom dataset file under `${MMDET_ROOT}\datasets`. If you have converted the data into COCO format like we did in the previous section, you can create a dataset class by simply inheriting the `CocoDataset` class of `mmdet` and only overwritting the classes. Here is an example:
 
 ```python
@@ -193,3 +195,26 @@ In the `data` dictionary:
 **`flip_ratio`** (flip augmentation related ones, this is relevant when mirrored classes are presented): You need to set this to `0` when mirrored classes are presented.
 
 Additionally you may also care about soft-nms setting or multi-scale training setting (like `img_scale=[(1333, 640), (1333, 800)]` would enable a more diverse multi-scale training).
+
+### Training
+
+Train with multiple GPUs:
+```shell
+./tools/dist_train.sh ${CONFIG_FILE} ${GPU_NUM} [optional arguments]
+```
+
+Example:
+```shell
+./tools/dist_train.sh \
+/media/yingges/Data_Junior/test/12/mmdet_workdirs/cascade_rcnn_r4_gcb_dconv_c3-c5_x101_32x4d_fpn_syncbn_1x/cascade_rcnn_r4_gcb_dconv_c3-c5_x101_32x4d_fpn_syncbn_1x.py \
+1 --validate
+```
+
+# More info to be added in a more formal way
+* Find advanced GCNET pretrained model files in [GCNET author github repo](https://github.com/xvjiarui/GCNet).
+* The `mmdet` files in this repo is only for keeping track of changes on top of the original code since for some reason we can't effectively keep a copy of our own revised `mmdet` code on github. So please install `mmdet` using the official repo and add changes given the changes in this repo accordingly.
+* If you run into `KeyError: 'segmentation'`, make following change to `${MMDET}/dataset/coco.py` :
+  ```python
+  if 'segmentation' in ann:
+      gt_masks_ann.append(ann['segmentation'])
+  ```
