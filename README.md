@@ -127,11 +127,11 @@ We provide two types of usage for the above modules:
 
 ### Execution environment
 
-**\#\#\#TODO**
+**###TODO**
 
 ### Pipeline design breakdown
 
-**\#\#\#TODO**
+**###TODO**
 
 ### Convert original data to COCO format
 
@@ -148,9 +148,16 @@ python ftdet2coco.py \
 
 ### Set splitting and class processing
 
-With the aggregated data file, use `ft_coco_postproc.py` under `yx_toolset/FT_roadsign/python/` to generate the final data file for training and testing. If you haven't done it, you will also have to create your own class processing logic in the `cls_filter()` interface and potentially also save the corresponding metadata in `post_proc_cfg_det.py` or `post_proc_cfg_seg.py`.
+With the aggregated data file, use `ft_coco_postproc.py` under `yx_toolset/FT_roadsign/python/` to generate the final data file for training and testing. If you haven't done it, you will also have to create your own class processing logic in the `cls_filter()` interface and potentially also save the corresponding metadata in `post_proc_cfg_det.py` or `post_proc_cfg_seg.py`. Here is an example:
+```python
+# Changes in post_proc_cfg_det/seg.py file
+```
 
-Example:
+```python
+# Changes in ft_coco_postproc.cls_filter()
+```
+
+Processing example:
 ```shell
 python ft_coco_postproc.py \
 /media/yingges/Data_Junior/data/vehicle/FT/cljgh_cut_20200220_checked/yx_generated/coco_out.json \
@@ -188,6 +195,7 @@ In the `data` dictionary:
 **`img_prefix`** in each set: The directory where the images are. You don't need to seperate the images in different set since the COCO API can pick them out automatically;  
 **`imgs_per_gpu`** : Change this to 1 if you run into graphical memory issue.
 
+And:
 >**`pretrained`** : This points to a URL or a local directory to load an initial model from when your training begins. It's recommended to change this to point to a local file;  
 **`num_classes`** in multiple heads: # of classes plus background class;  
 **`work_dir`** : The directory where log files and checkpoint files are stored. **It's highly recommended to also store the config file in this directory. (Though you need to do this manually)** ;  
@@ -210,11 +218,109 @@ Example:
 1 --validate
 ```
 
-# More info to be added in a more formal way
+### Testing
+
+Analyze logs and find the best checkpoint:
+```shell
+python tools/analyze_logs.py plot_curve \
+/media/yingges/Data_Junior/test/12/mmdet_workdirs/cascade_rcnn_r4_gcb_dconv_c3-c5_x101_32x4d_fpn_syncbn_1x/20200224_170512.log.json  \
+--keys bbox_mAP_50
+```
+
+Test:
+```shell
+python tools/test.py \
+/media/yingges/Data_Junior/test/12/mmdet_workdirs/cascade_rcnn_r4_gcb_dconv_c3-c5_x101_32x4d_fpn_syncbn_1x/cascade_rcnn_r4_gcb_dconv_c3-c5_x101_32x4d_fpn_syncbn_1x.py \
+/media/yingges/Data_Junior/test/12/mmdet_workdirs/cascade_rcnn_r4_gcb_dconv_c3-c5_x101_32x4d_fpn_syncbn_1x/epoch_6.pth \
+--json_out /media/yingges/Data_Junior/test/12/mmdet_workdirs/cascade_rcnn_r4_gcb_dconv_c3-c5_x101_32x4d_fpn_syncbn_1x/epoch_6
+```
+
+## Training a classification model for finegrained task
+
+Refer to [rwightman/pytorch-image-models](https://github.com/rwightman/pytorch-image-models) for the installation instructions of the classification model.
+
+In our case we need to crop out results of a detector to provide data for the classification model:
+```shell
+python classification_utils.py patch_extract \
+--input_path /media/yingges/Data_Junior/data/vehicle/FT/cljgh_cut_20200220_checked/ \ 
+--output_path /media/yingges/Data_Junior/data/vehicle/FT/cljgh_cut_20200220_checked/clsf/
+```
+
+The dataset should follow the file structure below: 
+```
+${ROOT}
+    train\
+        ${class1}\
+        ${class2}\
+        ${class3}\
+        ...
+    val\
+        ${class1}\
+        ...
+```
+
+**###TODO: Command line parameters sanity check**
+
+Train/test set splitting example:
+```shell
+python classification_utils.py set_split \
+--input_path /media/yingges/Data_Junior/data/vehicle/FT/cljgh_cut_20200220_checked/clsf/body_type_train/ \
+--output_path /media/yingges/Data_Junior/data/vehicle/FT/cljgh_cut_20200220_checked/clsf/body_type_test/ \
+--test_ratio .2
+```
+
+### Environment setup
+
+### Training
+
+Command line parameters you should care about:
+>**`batch_size`**  
+**`num-class`**  
+**`pretrained`**  
+**`output`**
+
+Depending on your case there might be a couple settings you would care about. Input size is one of the examples: you shouldn't have an input size too much larger than the data image size.
+
+```shell
+python train.py /media/yingges/Data_
+Junior/data/vehicle/FT/cljgh_cut_20200220_checked/clsf/body_type/ --model efficientnet_b0 -b 128 --sched step --epochs 450 --decay-epochs 2.4 --decay-rate .97 --opt rmsproptf --opt-eps .001 -j 8 --warmup-lr 1e-6 --weight-decay 1e-5 --drop 0.4 --drop-connect 0.3 --aa rand-m9-mstd0.5 --remode pixel --reprob 0.2 --amp --lr .016 --num-class 15 --pretrained --output /media/yingges/Data_Junior/data/vehicle/FT/cljgh_cut_20200220_checked/clsf/work_dir/
+```
+When prompted with "Downloading...", it's recommended to use a VPN and a web browser to download the link to the target location.
+
+## Evaluation and visualizatoin
+
+Evaluation example:
+```shell
+python eval_main.py eval \
+--anno_file_path /media/yingges/Data_Junior/data/vehicle/FT/cljgh_cut_20200220_checked/yx_generated/test.json \
+--res_file_path /media/yingges/Data_Junior/test/12/mmdet_workdirs/cascade_rcnn_r4_gcb_dconv_c3-c5_x101_32x4d_fpn_syncbn_1x/epoch_6.bbox.json
+```
+
+Visualization example:
+```shell
+python eval_main.py viz --ann_type segm \
+--anno_file_path /media/yingges/Data/201910/FT/FTData/yunxikeji-01-2019-10-21/Normal/test.json \
+--res_file_path /media/yingges/Data_Junior/test/12/mmdet_workdirs/cascade_mask_rcnn_r4_gcb_dconv_c3-c5_x101_32x4d_fpn_syncbn_1x_0225/epoch_11_eval/epoch_11.segm.json \
+--img_folder_path /media/yingges/Data/201910/FT/FTData/yunxikeji-01-2019-10-21/images/ \
+--output_save_path /media/yingges/Data_Junior/test/12/mmdet_workdirs/cascade_mask_rcnn_r4_gcb_dconv_c3-c5_x101_32x4d_fpn_syncbn_1x_0225/epoch_11_eval/viz/
+```
+
+# Miscellaneous utilities
+
+### Subset extractaction
+**###TODO**
+
+# Informal additional info and notes
 * Find advanced GCNET pretrained model files in [GCNET author github repo](https://github.com/xvjiarui/GCNet).
-* The `mmdet` files in this repo is only for keeping track of changes on top of the original code since for some reason we can't effectively keep a copy of our own revised `mmdet` code on github. So please install `mmdet` using the official repo and add changes given the changes in this repo accordingly.
+* The `mmdet` files in this repo is only for keeping track of changes on top of the original code since for some reason we can't effectively keep a copy of our own revised `mmdet` code on github(compilation doesn't work after pulling it into a new environment). So please install `mmdet` using the official repo and make changes based on the changes in this repo.
 * If you run into `KeyError: 'segmentation'`, make following change to `${MMDET}/dataset/coco.py` :
   ```python
   if 'segmentation' in ann:
       gt_masks_ann.append(ann['segmentation'])
+  ```
+* Since we enlarge the results of a detector before feeding them into a classifier. We can use a similar pre-process when combining detection and classification as a mutli-task problem.
+* ```shell
+  python extract_subset.py extract_subset \
+  --source_path /media/yingges/Data/201910/FT/FTData/yunxikeji-01-2019-10-21/ \
+  --output_path=/media/yingges/Data/201910/FT/FTData/yunxikeji-01-2019-10-21/sample/backup_team/
   ```
