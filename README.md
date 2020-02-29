@@ -1,3 +1,7 @@
+# YX pipeline
+
+**IMPORTANT**: It's usually a good idea to look into the code for more detailed command line descryptions before you run any scripts in this repository even when some of them might have been explained in this documentation.
+
 # User related
 
 ## Install mmlab
@@ -75,51 +79,48 @@ pip install -v -e .  # or "python setup.py develop"
 
 Import `infer/cascade_infer.py`, `infer/det_infer.py` or `infer/seg_infer.py` depending on your task. Most part of these modules provide the same interfaces described in the following section.
 
-#### 2020/02/21
-For vehicle detection and fine-grained recognition we will only have to worry about module `det_infer.py` for now.
+### Vehicle attribute prediction
 
-The vehicle body types we can recognize currently: [‘SUV’, ‘Sedan’, ‘Minivan’, ‘Microbus’, ‘Truck’, ‘Bus’].
-
-### Interface description
-
-det_infer.py:
+We will cover how to use the vehicle attribute prediction APIs by going through what's going on when running `infer/cascade_infer.py` as a script. Following is the code snippet that you will care about:
 ```python
-model_init(task_type=None, config_files=None, checkpoint_files=None)
-'''
-    args:
-        config_files: A list of config file paths.
-        checkpoint_files: A list of checkpoint file paths. Note you need to list them in order with the above list if you are using more than one model.
-        task_type: You can safely ignore this.
-    returns:
-        A list of model instances.
-'''
-
-single_img_test(imgs, model=None, task_type='cars')
-'''
-    args:
-        imgs: A list of test image paths. They need to be in JPEG format.
-        model: A list of model instances which we will talk more about in detailed in the followings.
-        task_type: Choose from ['p_generic', 'p_finegrained', 'cars'].
-    returns:
-        A list of dictionaries each of which is the output for one image, formatted as:
-        [{'bbox': A list of bounding boxes with following format: [xmin, ymin, xmax, ymax],
-        'score': A list of corresponding scores,
-        'cls_name': A list of corresponding class names as strings},
-        {...},
-        {...},
-        ...]
-'''
+tasks = metadata.vehicle_attr_pred_cfg
+for task in tasks:
+    task.clsf_model = model_init(task.cfg, 'classify')
+det_model = model_init(args.det_config_file, 'detection', args.det_ckpt_file)
+imgs = glob(pj(args.img_folder_path, '*'))
+for idx, img in enumerate(imgs):
+    print('{}/{}'.format(idx, len(imgs)))
+    res = single_img_test(img, det_model, tasks)
+    print(res)
 ```
+First you will need to change the `ckpt` fields in each of the `fg_task` class instance in `vehicle_attr_pred_cfg` in `infer\metadata.py`. Then you can build the classification models and store them in the `fg_task` instances like we did on line 1-3 in the above snippet. Line 4 builds the generic vehicle and logo detection model. After these you can pass the detection model and the task instances to the `single_img_test()` interface to run inference on the images.
 
-We provide two types of usage for the above modules:
+The returned value of `single_img_test()` follows the format we define earlier (yes despite the name, this interface can run on a list of images and we haven't changed this FEATURE yet!):
+```python
+"""
+A list of dictionaries each of which is the output for one image, formatted as:
+            [{'bbox': A list of bounding boxes with following format: [xmin, ymin, xmax, ymax],
+            'score': A list of corresponding scores,
+            'cls_name': A list of corresponding class names as strings},
+            {...},
+            {...},
+            ...]
+"""
+```
+But since we add multi-task as a layer of additional logic, the above list will be embedded in yet another dictionary like the following example illustrates if we call the above result as `task_specific_res_${task}`:
+```python
+"""
+{
+    "color": task_specific_res_color,
+    "car_make": task_specific_res_car_make,
+    "body_type": task_specific_res_body_type
+}
+"""
+``` 
 
-1. Hardcoding the model and config file paths in the inference script for your maximum eaze
+### Segmentation
 
-    This way you will only have to worry about the `single_img_test()` interface and its `imgs``` argument but you will have to change the code whenever you move the model/config files.
 
-2. Or you can use `model_init()``` to instantiate a model before looping through the images.
-
-    That is, you build a list of model instances with `model_init()` first(so that you don't create them repeatedly) and feed it to `single_img_test()` in the loop. This way you don't need to change code in the inference module when you move the model files.
 
 # Developer related
 
@@ -130,6 +131,8 @@ We provide two types of usage for the above modules:
 **###TODO**
 
 ### Pipeline design breakdown
+
+In short, the idea behind the data preparation pipeline I implement is that the two processes, the conversion from the data in the raw format to COCO format and the conversion from the COCO formatted data to data in a format that can directly be used to train, are separated to maximize the decoupling of the logics of these two processes.
 
 **###TODO**
 
@@ -166,10 +169,11 @@ python ft_coco_postproc.py \
 vehicle_logo_general \
 --test_ratio 0.2
 ```
+**###TODO: JSON file name extension check**
 
 ## Training under mmlab
 
-**For a more detailed documentation please refer to [mmlab's own github page](https://github.com/open-mmlab/mmdetection) (especially their [GETTING_STARTED](https://github.com/open-mmlab/mmdetection/blob/master/docs/GETTING_STARTED.md) setction).**
+**For a more detailed documentation please refer to [the github page of mmlab](https://github.com/open-mmlab/mmdetection) (especially their [GETTING_STARTED](https://github.com/open-mmlab/mmdetection/blob/master/docs/GETTING_STARTED.md) setction).**
 
 Create a custom dataset file under `${MMDET_ROOT}\datasets`. If you have converted the data into COCO format like we did in the previous section, you can create a dataset class by simply inheriting the `CocoDataset` class of `mmdet` and only overwritting the classes. Here is an example:
 
@@ -179,13 +183,13 @@ from .registry import DATASETS
 
 @DATASETS.register_module
 class FTDataset_det_exclude_p(CocoDataset):
-    # Note the order of this set should follow the category id of your coco file
+    # Note the order of this set should be consistent with the category id of your COCO file
     CLASSES = ('i', 'panel', 'sc', 'tl', 'w') 
 ```
 
 Import this class in `${MMDET_ROOT}\datasets\__init__.py` then you can use it in your config files and train on your own data.
 
-Followings are the keyword-value that you generally would care about in the config files.
+Followings are the keyword-value that you generally would care about in the config files:
 
 >**`dataset_type`** : The aforementioned custom dataset class;  
 **`data_root`** : The root directory of the data.
@@ -239,7 +243,7 @@ python tools/test.py \
 
 Refer to [rwightman/pytorch-image-models](https://github.com/rwightman/pytorch-image-models) for the installation instructions of the classification model.
 
-In our case we need to crop out results of a detector to provide data for the classification model:
+In our case we need to crop out results of a detector to provide data for the classification model (if you already have the data in classification format, ignore this step):
 ```shell
 python classification_utils.py patch_extract \
 --input_path /media/yingges/Data_Junior/data/vehicle/FT/cljgh_cut_20200220_checked/ \ 
@@ -276,16 +280,19 @@ python classification_utils.py set_split \
 Command line parameters you should care about:
 >**`batch_size`**  
 **`num-class`**  
-**`pretrained`**  
-**`output`**
+**`pretrained`** : Use a pretrained model to start the training;  
+**`output`** : Output directory. Note that the code will automatically create a unique subfolder so you only need to point this to a general work directory. 
 
-Depending on your case there might be a couple settings you would care about. Input size is one of the examples: you shouldn't have an input size too much larger than the data image size.
+Depending on your case there might be a couple settings you would care about. 
+
+**Update:** The following doesn't seem to be true.  
+Input size is one of the examples: you shouldn't have an input size too much larger than the data image size.
 
 ```shell
 python train.py /media/yingges/Data_
 Junior/data/vehicle/FT/cljgh_cut_20200220_checked/clsf/body_type/ --model efficientnet_b0 -b 128 --sched step --epochs 450 --decay-epochs 2.4 --decay-rate .97 --opt rmsproptf --opt-eps .001 -j 8 --warmup-lr 1e-6 --weight-decay 1e-5 --drop 0.4 --drop-connect 0.3 --aa rand-m9-mstd0.5 --remode pixel --reprob 0.2 --amp --lr .016 --num-class 15 --pretrained --output /media/yingges/Data_Junior/data/vehicle/FT/cljgh_cut_20200220_checked/clsf/work_dir/
 ```
-When prompted with "Downloading...", it's recommended to use a VPN and a web browser to download the link to the target location.
+When prompted with "Downloading...", it's recommended to use a VPN and a web browser to download the linked pretrained model to the target location.
 
 ## Evaluation and visualizatoin
 
@@ -312,8 +319,8 @@ python eval_main.py viz --ann_type segm \
 
 # Informal additional info and notes
 * Find advanced GCNET pretrained model files in [GCNET author github repo](https://github.com/xvjiarui/GCNet).
-* The `mmdet` files in this repo is only for keeping track of changes on top of the original code since for some reason we can't effectively keep a copy of our own revised `mmdet` code on github(compilation doesn't work after pulling it into a new environment). So please install `mmdet` using the official repo and make changes based on the changes in this repo.
-* If you run into `KeyError: 'segmentation'`, make following change to `${MMDET}/dataset/coco.py` :
+* The `mmdet` files in this repo is only for keeping track of changes on top of the original code since for some reason we can't effectively keep a copy of our own revised `mmdet` code on github(compilation doesn't work after pulling it into a new environment). So please install `mmdet` using the official repo and make changes based on the changes in this repo. Also if you are just using this repo for inference then you don't need to worry about this and can simply install mmlab from the official repo.
+* If you run into `KeyError: 'segmentation'` after starting a detector training, make the following change to `${MMDET}/dataset/coco.py` :
   ```python
   if 'segmentation' in ann:
       gt_masks_ann.append(ann['segmentation'])
