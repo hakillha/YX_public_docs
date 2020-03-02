@@ -79,7 +79,15 @@ pip install -v -e .  # or "python setup.py develop"
 
 Import `infer/cascade_infer.py`, `infer/det_infer.py` or `infer/seg_infer.py` depending on your task. Most part of these modules provide the same interfaces described in the following section.
 
+For consistency we have removed the hardcode stype usage.
+
 ### Vehicle attribute prediction
+
+Install `timm` library for classification support:
+```shell
+cd ${mmdet_package}/pytorch-image-models
+pip install -v -e .
+```
 
 We will cover how to use the vehicle attribute prediction APIs by going through what's going on when running `infer/cascade_infer.py` as a script. Following is the code snippet that you will care about:
 ```python
@@ -118,9 +126,14 @@ But since we add multi-task as a layer of additional logic, the above list will 
 """
 ``` 
 
+An example of running this run as a script:
+```shell
+python cascade_infer.py --img_folder_path /home/yingges/data/vehicle/demo_imgs/ --det_config_file ~/data/model/0229_vehicle_attr/generic_veh_logo_det/cascade_rcnn_r4_gcb_dconv_c3-c5_x101_32x4d_fpn_syncbn_1x.py --det_ckpt_file ~/data/model/0229_vehicle_attr/generic_veh_logo_det/epoch_6.pth 
+```
+
 ### Segmentation
 
-
+**###TODO**
 
 # Developer related
 
