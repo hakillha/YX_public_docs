@@ -30,6 +30,7 @@ scl enable devtoolset-8 bash
 
   For CentOS
   ```shell
+  # Download NCCL rpm installation file from the official site
   yum localinstall $NCCL_RPM_FILE
   ```
 - GCC 4.9 or higher
@@ -133,7 +134,14 @@ python cascade_infer.py --img_folder_path /home/yingges/data/vehicle/demo_imgs/ 
 
 ### Segmentation
 
-**###TODO**
+Here is a simple example on how to run segmentation inference:
+```python
+imgs = glob(pj(${IMG_FOLDER}, '*'))
+model = model_init('/home/yingges/data/models/mmlab/segm_0221/cascade_mask_rcnn_r4_gcb_dconv_c3-c5_x101_32x4d_fpn_syncbn_1x.py',
+            '/home/yingges/data/models/mmlab/segm_0221/epoch_14.pth')
+for img in imgs:
+    print(single_img_test(img, model))
+```
 
 # Developer related
 
@@ -213,7 +221,9 @@ In the `data` dictionary:
 **`imgs_per_gpu`** : Change this to 1 if you run into graphical memory issue.
 
 And:
->**`pretrained`** : This points to a URL or a local directory to load an initial model from when your training begins. It's recommended to change this to point to a local file;  
+>**`total_epochs`** : Currently we set to this to 18 for instance segmentation training;  
+**`step` in `lr_config`** : Currently we set to this to `[10, 14]` for instance segmentation training;  
+**`pretrained`** : This points to a URL or a local directory to load an initial model from when your training begins. It's recommended to change this to point to a local file;  
 **`num_classes`** in multiple heads: # of classes plus background class;  
 **`work_dir`** : The directory where log files and checkpoint files are stored. **It's highly recommended to also store the config file in this directory. (Though you need to do this manually)** ;  
 **`load_from`** : The directory that points to a checkpoint file when you are resuming a training. You should also be able to resume a training by passing this as an command line parameter;  
@@ -309,7 +319,30 @@ When prompted with "Downloading...", it's recommended to use a VPN and a web bro
 
 ## Evaluation and visualizatoin
 
-Evaluation example:
+### Update on double confidence threshold evaluation (**2020/03/03**):  
+Now you can perform double confidence threshold evaluation by enabling `--map_curve` and setting `--score_thr` to zero. The precision threshold and recall threshold are set to `.8` and `.95` respectively. Following is an example of how to generate a double threshold result:
+```shell
+python eval_main.py eval --ann_type segm \
+--anno_file_path /media/yingges/Data/201910/FT/FTData/yunxikeji-01-2019-10-21/Normal/test.json \
+--res_file_path /media/yingges/Data_Junior/test/12/mmdet_workdirs/cascade_mask_rcnn_r4_gcb_dconv_c3-c5_x101_32x4d_fpn_syncbn_1x_0225/epoch_11_eval/epoch_11.segm.json \
+--map_curve --score_thr 0 --segm_iou_thr 0.2
+```
+
+For each class the above evaluation will print out the following information:
+```
+${CLASS_NAME}: 0.429, 0.855 # You can ignore these two numbers  
+rc_under_rc_thr: 0.855 # Recall under the recall threshold. This means the highest recall value we can get to the recall threshold.  
+pr_under_rc_thr: 0.429 # The precision corresponds to the above recall value.  
+conf_under_rc_thr: 0.050 # The corresponding confidence threshold.
+
+rc_under_pr_thr: 0.707 # The recall corresponds to the precision value below.   
+pr_under_pr_thr: 0.800 # Precision under the precision threshold. This means the closest precision value we can get to the precision threshold.  
+conf_under_pr_thr: 0.429 # The corresponding confidence threshold. 
+```
+
+### Other examples
+
+mAP Evaluation example:
 ```shell
 python eval_main.py eval \
 --anno_file_path /media/yingges/Data_Junior/data/vehicle/FT/cljgh_cut_20200220_checked/yx_generated/test.json \
@@ -344,3 +377,4 @@ python eval_main.py viz --ann_type segm \
   --source_path /media/yingges/Data/201910/FT/FTData/yunxikeji-01-2019-10-21/ \
   --output_path=/media/yingges/Data/201910/FT/FTData/yunxikeji-01-2019-10-21/sample/backup_team/
   ```
+* For some reason when training on a model with HRnet as backbone you need to set the `num_classes` to the actual # of classes plus 2 instead of just one background class. And to further address this issue we also changed `len(det)` in line 169, `${mmdet}/core/evaluation/coco_utils` to `len(dataset.cat_ids)`.
